@@ -16,7 +16,7 @@ To run the game:
 
 To debug a specific scene without going through the graph:
 
-    python -m butterfly_effect ${chosen_scene}
+    python -m butterfly_effect -s ${chosen_scene}
 
 The scene in question must be included in the scene_map in
 `butterfly_effect.__init__.py` to be used in this manner.

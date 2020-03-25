@@ -6,7 +6,7 @@ import butterfly_effect as be
 
 
 parser = argparse.ArgumentParser(description="Dev tooling to choose scene to start.")
-parser.add_argument("start_scene")
+parser.add_argument("-s", dest="start_scene")
 args = parser.parse_args()
 
 run_first = be.scene_map.get(args.start_scene, be.Splash)
