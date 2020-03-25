@@ -1,5 +1,7 @@
 import ppb
 
+import kinematic
+
 
 class Splash(ppb.BaseScene):
     background_color = 112, 31, 153
@@ -29,4 +31,5 @@ class Title(ppb.BaseScene):
 
 scene_map = {
     "title": Title,
+    "kinematic": kinematic.Scene,
 }
