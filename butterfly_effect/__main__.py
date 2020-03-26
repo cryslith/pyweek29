@@ -11,4 +11,4 @@ args = parser.parse_args()
 
 run_first = be.scene_map.get(args.start_scene, be.Splash)
 
-ppb.run(starting_scene=run_first)
+ppb.run(starting_scene=run_first, systems=be.systems)

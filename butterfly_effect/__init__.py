@@ -33,3 +33,7 @@ scene_map = {
     "title": Title,
     "kinematic": kinematic.Scene,
 }
+
+systems = [
+    kinematic.CollisionSystem,
+]

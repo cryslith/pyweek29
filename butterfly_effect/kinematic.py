@@ -1,79 +1,130 @@
-import ppb
-import ppb.assets
-import ppb.sprites
+from ppb import Vector, Sprite, BaseScene
+from ppb.assets import Circle, Square
+from ppb.sprites import RenderableMixin, RotatableMixin, BaseSprite
+from ppb.systemslib import System
 
-from pygame import Surface, draw
+import itertools
 
-def elastic_collision(x_hat, v, m1, m2, internal=False):
-    '''
-    Compute the result of an elastic collision between an initally stationary object "O1" located at the origin,
-    and another moving object "O2".
+class CollisionSystem(System):
+    @staticmethod
+    def elastic_collision(x_hat, v, m1, m2, internal=False):
+        '''
+        Compute the result of an elastic collision between an initally stationary object "O1" located at the origin,
+        and another moving object "O2".
 
-    Args:
-        x_hat: Normal vector to the line that O2 reflects off of in the collision.
-            For the case of two circles, this is the normalized position vector of O2.
-            Must be a unit vector.
-        v: Initial velocity vector of O2.
-        m1: Mass of O1.  Can be infinite, in which case dv1 is always 0.
-        m2: Mass of O2.
-        internal: Whether to allow "internal" collisions, where O2 is initially moving away from O1.
-            If false, then the result of an internal collision is (0, 0).
+        If both m1 and m2 are infinite, then they do not interact at all.
 
-    Returns:
-        Tuple (dv1, dv2), where dvi is the difference between
-            the final velocity of Oi and the initial velocity of Oi.
-    '''
-    v_normal = x_hat * v
-    if v_normal >= 0:
-        # internal collision
-        if not internal:
-            return (ppb.Vector(0, 0), ppb.Vector(0, 0))
+        Args:
+            x_hat: Normal vector to the line that O2 reflects off of in the collision.
+                For the case of two circles, this is the normalized position vector of O2.
+                Must be a unit vector.
+            v: Initial velocity vector of O2.
+            m1: Mass of O1.  Can be infinite, in which case dv1 is always 0.
+            m2: Mass of O2.  Can be infinite, in which case dv2 is always 0.
+            internal: Whether to allow "internal" collisions, where O2 is initially moving away from O1.
+                If false, then the result of an internal collision is (0, 0).
 
-    # see https://en.wikipedia.org/wiki/Elastic_collision#Equations
-    total_mass = m1 + m2
-    dv1_normal = 2 * m2 / total_mass * v_normal
-    dv2_normal = (-1 if m1 == float('inf') else (m2 - m1) / total_mass) * v_normal
-    dv1 = dv1_normal * x_hat
-    dv2 = (dv2_normal - v_normal) * x_hat
-    return (dv1, dv2)
+        Returns:
+            Tuple (dv1, dv2), where dvi is the difference between
+                the final velocity of Oi and the initial velocity of Oi.
+        '''
+        if m1 == float('inf') and m2 == float('inf'):
+            # two infinite-mass objects; forbid interaction
+            return (Vector(0, 0), Vector(0, 0))
+
+        v_normal = x_hat * v
+        if v_normal >= 0:
+            # internal collision
+            if not internal:
+                return (Vector(0, 0), Vector(0, 0))
+
+        if m1 == float('inf'):
+            # object bouncing off a wall
+            return (Vector(0, 0), -2 * v_normal * x_hat)
+        if m2 == float('inf'):
+            # imagine a ping-pong paddle
+            return (2 * v_normal * x_hat, Vector(0, 0))
+
+        # see https://en.wikipedia.org/wiki/Elastic_collision#Equations
+        total_mass = m1 + m2
+        dv1_normal = 2 * m2 / total_mass * v_normal
+        dv2_normal = (m2 - m1) / total_mass * v_normal
+        dv1 = dv1_normal * x_hat
+        dv2 = (dv2_normal - v_normal) * x_hat
+        return (dv1, dv2)
+
+    @staticmethod
+    def collision_vector(o1, o2):
+        x_hat = o1.collision_vector(o2)
+        if x_hat is not NotImplemented:
+            return x_hat
+        neg_x_hat = o2.collision_vector(o1)
+        if neg_x_hat is not NotImplemented:
+            return -neg_x_hat
+        return Vector(0, 0)
+
+    def on_update(self, update_event, signal):
+        collidables = update_event.scene.get(kind=CollidableMixin)
+        for (o1, o2) in itertools.combinations(collidables, 2):
+            x_hat = self.collision_vector(o1, o2)
+            if not x_hat:
+                continue
+            (dv1, dv2) = self.elastic_collision(x_hat, o2.velocity - o1.velocity, o1.mass, o2.mass)
+            o1.velocity += dv1
+            o2.velocity += dv2
 
 
-class Ball(ppb.sprites.RenderableMixin, ppb.sprites.RotatableMixin, ppb.sprites.BaseSprite):
-    velocity = ppb.Vector(0, 0)
+class CollidableMixin:
+    velocity = Vector(0, 0)
     mass = 1
 
+    def collision_vector(self, other):
+        '''
+        Determine the collision vector between this and another collidable object.
+
+        Returns:
+            Normal vector to the line of reflection in the collision
+            between self and other;
+            or 0 if there is no collision;
+            or NotImplemented if the result is unknown.
+        '''
+        return NotImplemented
+
+
+class Ball(RenderableMixin, RotatableMixin, BaseSprite, CollidableMixin):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def on_update(self, update_event: ppb.events.Update, signal):
-        self.position += self.velocity * update_event.time_delta
-
-        for other in update_event.scene.get(kind=Ball):
-            if self is other:
-                continue
+    def collision_vector(self, other):
+        if isinstance(other, Ball):
             x = other.position - self.position
             if x.length > (self.size + other.size) / 2:
                 # not touching
-                continue
+                return Vector(0, 0)
             if not x:
                 # coincident; no way to collide reasonably
-                continue
-            v = other.velocity - self.velocity
-            # x and v are their position and velocity relative to us
-            x_hat = x.normalize()
+                return x
+            return x.normalize()
+        return NotImplemented
 
-            (dv1, dv2) = elastic_collision(x_hat, v, self.mass, other.mass)
-            self.velocity += dv1
-            other.velocity += dv2
+    def on_update(self, update_event, signal):
+        self.position += self.velocity * update_event.time_delta
 
 
-class Wall(ppb.Sprite):
+class Wall(Sprite, CollidableMixin):
+    mass = float('inf')
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def collision_vector(self, b):
+    def collision_vector(self, other):
+        if isinstance(other, Ball):
+            return self.collision_with_ball(other)
+        return NotImplemented
+
+    def collision_with_ball(self, b):
         '''Calculate the collision vector between this wall and a ball;
-        or None if they aren't colliding.'''
+        or 0 if they aren't colliding.'''
         position_rotated = (b.position - self.position).rotate(-self.rotation) + self.position
         for (c1, c2) in [
                     (self.left.bottom, self.left.top),
@@ -95,46 +146,38 @@ class Wall(ppb.Sprite):
             n = position_rotated - c
             if n.length <= b.size / 2:
                 return n.normalize().rotate(self.rotation)
-        return None
-
-    def on_update(self, update_event: ppb.events.Update, signal):
-        for ball in update_event.scene.get(kind=Ball):
-            x_hat = self.collision_vector(ball)
-            if not x_hat:
-                continue
-            (_, dv2) = elastic_collision(x_hat, ball.velocity, float('inf'), ball.mass)
-            ball.velocity += dv2
+        return Vector(0, 0)
 
 
-class Scene(ppb.BaseScene):
+class Scene(BaseScene):
     background_color = 56, 143, 61
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         for d in [
-                {'size': 0.5, 'position': ppb.Vector(-2, 0), 'velocity': ppb.Vector(3, 0)},
+                {'size': 0.5, 'position': Vector(-2, 0), 'velocity': Vector(3, 0)},
                 {'size': 1, 'mass': 4},
-                {'size': 0.5, 'position': ppb.Vector(3, 0.1)},
-                {'size': 0.5, 'position': ppb.Vector(4, -0.5)},
-                {'size': 0.5, 'position': ppb.Vector(5, -1)},
-                {'size': 0.5, 'position': ppb.Vector(-5, -3), 'velocity': ppb.Vector(1, 0)},
-                {'size': 0.5, 'position': ppb.Vector(-2, -2.6), 'velocity': ppb.Vector(1, 0)},
-                {'size': 0.5, 'position': ppb.Vector(-1, -2.7), 'velocity': ppb.Vector(1, 0)},
-                {'size': 0.5, 'position': ppb.Vector(0, -2.8), 'velocity': ppb.Vector(1, 0)},
-                {'size': 0.5, 'position': ppb.Vector(1, -2.95), 'velocity': ppb.Vector(2, 0)},
-                {'size': 0.5, 'position': ppb.Vector(2, -2.94), 'velocity': ppb.Vector(3, 0)},
+                {'size': 0.5, 'position': Vector(3, 0.1)},
+                {'size': 0.5, 'position': Vector(4, -0.5)},
+                {'size': 0.5, 'position': Vector(5, -1)},
+                {'size': 0.5, 'position': Vector(-5, -3), 'velocity': Vector(1, 0)},
+                {'size': 0.5, 'position': Vector(-2, -2.6), 'velocity': Vector(1, 0)},
+                {'size': 0.5, 'position': Vector(-1, -2.7), 'velocity': Vector(1, 0)},
+                {'size': 0.5, 'position': Vector(0, -2.8), 'velocity': Vector(1, 0)},
+                {'size': 0.5, 'position': Vector(1, -2.95), 'velocity': Vector(2, 0)},
+                {'size': 0.5, 'position': Vector(2, -2.94), 'velocity': Vector(3, 0)},
         ]:
-            b = Ball(image=ppb.assets.Circle(230, 20, 20))
+            b = Ball(image=Circle(230, 20, 20))
             for (k, v) in d.items():
                 setattr(b, k, v)
             self.add(b)
 
         for d in [
-                {'rotation': 20, 'position': ppb.Vector(-3, 0)},
-                {'rotation': 45, 'position': ppb.Vector(0, 2.85)},
-                {'rotation': 45, 'position': ppb.Vector(6, -3), 'size': 2},
+                {'rotation': 20, 'position': Vector(-3, 0)},
+                {'rotation': 45, 'position': Vector(0, 2.85)},
+                {'rotation': 45, 'position': Vector(6, -3), 'size': 2},
         ]:
-            b = Wall(image=ppb.assets.Square(170, 53, 232))
+            b = Wall(image=Square(170, 53, 232))
             for (k, v) in d.items():
                 setattr(b, k, v)
             self.add(b)
