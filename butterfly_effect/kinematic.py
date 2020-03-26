@@ -4,6 +4,7 @@ from ppb.sprites import RenderableMixin, RotatableMixin, BaseSprite
 from ppb.systemslib import System
 
 import itertools
+from math import sqrt
 
 class CollisionSystem(System):
     @staticmethod
@@ -92,8 +93,8 @@ class CollidableMixin:
 
 
 class Ball(RenderableMixin, RotatableMixin, BaseSprite, CollidableMixin):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    size = 0.5
+    image = Circle(230, 20, 20)
 
     def collision_vector(self, other):
         if isinstance(other, Ball):
@@ -111,11 +112,32 @@ class Ball(RenderableMixin, RotatableMixin, BaseSprite, CollidableMixin):
         self.position += self.velocity * update_event.time_delta
 
 
+class Splitter(Ball):
+    split_angle = 10
+    image = Circle(20, 230, 20)
+
+    def on_update(self, update_event, signal):
+        super().on_update(update_event, signal)
+        if self.mass * self.velocity.length >= 1:
+            update_event.scene.add(Splitter(
+                position=self.position,
+                size=self.size / sqrt(2),
+                mass=self.mass / 2,
+                velocity=self.velocity.rotate(self.split_angle),
+            ))
+            update_event.scene.add(Splitter(
+                position=self.position,
+                size=self.size / sqrt(2),
+                mass=self.mass / 2,
+                velocity=self.velocity.rotate(-self.split_angle),
+            ))
+            update_event.scene.remove(self)
+
+
+
 class Wall(Sprite, CollidableMixin):
     mass = float('inf')
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    image = Square(170, 53, 232)
 
     def collision_vector(self, other):
         if isinstance(other, Ball):
@@ -154,30 +176,22 @@ class Scene(BaseScene):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        for d in [
-                {'size': 0.5, 'position': Vector(-2, 0), 'velocity': Vector(3, 0)},
-                {'size': 1, 'mass': 4},
-                {'size': 0.5, 'position': Vector(3, 0.1)},
-                {'size': 0.5, 'position': Vector(4, -0.5)},
-                {'size': 0.5, 'position': Vector(5, -1)},
-                {'size': 0.5, 'position': Vector(-5, -3), 'velocity': Vector(1, 0)},
-                {'size': 0.5, 'position': Vector(-2, -2.6), 'velocity': Vector(1, 0)},
-                {'size': 0.5, 'position': Vector(-1, -2.7), 'velocity': Vector(1, 0)},
-                {'size': 0.5, 'position': Vector(0, -2.8), 'velocity': Vector(1, 0)},
-                {'size': 0.5, 'position': Vector(1, -2.95), 'velocity': Vector(2, 0)},
-                {'size': 0.5, 'position': Vector(2, -2.94), 'velocity': Vector(3, 0)},
-        ]:
-            b = Ball(image=Circle(230, 20, 20))
-            for (k, v) in d.items():
-                setattr(b, k, v)
-            self.add(b)
+        for x in [
+                Ball(position=Vector(-2, 0), velocity=Vector(8, 0)),
+                Ball(size=1, mass=4),
+                Ball(position=Vector(4, -0.5)),
+                Ball(position=Vector(5, -1)),
+                Ball(position=Vector(-5, -3), velocity=Vector(1, 0)),
+                Ball(position=Vector(-2, -2.6), velocity=Vector(1, 0)),
+                Ball(position=Vector(-1, -2.7), velocity=Vector(1, 0)),
+                Ball(position=Vector(0, -2.8), velocity=Vector(1, 0)),
+                Ball(position=Vector(1, -2.95), velocity=Vector(2, 0)),
+                Ball(position=Vector(2, -2.94), velocity=Vector(3, 0)),
 
-        for d in [
-                {'rotation': 20, 'position': Vector(-3, 0)},
-                {'rotation': 45, 'position': Vector(0, 2.85)},
-                {'rotation': 45, 'position': Vector(6, -3), 'size': 2},
+                Wall(rotation=20, position=Vector(-3, 0)),
+                Wall(rotation=45, position=Vector(0, 2.85)),
+                Wall(rotation=45, position=Vector(6, -3), size=2),
+
+                Splitter(position=Vector(3, 0.1)),
         ]:
-            b = Wall(image=Square(170, 53, 232))
-            for (k, v) in d.items():
-                setattr(b, k, v)
-            self.add(b)
+            self.add(x)
