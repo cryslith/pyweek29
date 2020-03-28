@@ -1,6 +1,6 @@
 import ppb
 
-import kinematic
+import butterfly_effect.kinematic as kinematic
 
 
 class Splash(ppb.BaseScene):
